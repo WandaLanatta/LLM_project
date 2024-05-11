@@ -54,33 +54,21 @@ def split_documents(documents: list[Document]):
 ################--- ---------#####################
 
 def add_to_chroma(chunks: list[Document]):
-    db=Chroma(
-        persist_directory=CHROMA_PATH,embedding_function=get_embedding_function()
+    # Crea una instancia de Chroma que representa la base de datos
+    db = Chroma(
+        persist_directory=CHROMA_PATH, embedding_function=get_embedding_function()
     )
-    # db.add_documents(new_chunks,ids=new_chunk_ids)
-    # db.persist()
-    #Calculo los ID de los documentos
-    chunks_with_ids=calculate_chunk_ids(chunks)
 
-    #Obtiene los documentos existentes
-    existing_items=db.get(include=[]) # Los id se inclueyen por defecto, get metodo de Chroma
-    existing_ids= set(existing_items["ids"])
-    print(f"Numero de Documentos existentes en la Base de Datos:{len(existing_ids)}")
+    # Calcula los ID de los documentos
+    chunks_with_ids = calculate_chunk_ids(chunks)
 
-    # Comprobacion de nuevos documentos
-    new_chunks=[]
-    for chunk in chunks_with_ids:
-        if chunk.metadata["id"] not in existing_ids:
-            new_chunks.append(chunk)
+    # Obtiene los documentos existentes
+    existing_items = db.get(include=[])  # Los ID siempre se incluyen por defecto
+    existing_ids = set(existing_items["ids"])
+    print(f"Numero de Documentos existentes en la Base de Datos: {len(existing_ids)}")
+
     
-    # Añade los documentos nuevos a la base de datos
-    if len(new_chunks):
-        print(f"👉 Añadiendo nuevos documentos: {len(new_chunks)}")
-        new_chunk_ids = [chunk.metadata["id"] for chunk in new_chunks]
-        db.add_documents(new_chunks, ids=new_chunk_ids)
-        db.persist()
-    else:
-        print("✅ No hay documentos añadidos")
+
 
 
 
