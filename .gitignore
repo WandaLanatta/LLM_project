@@ -1,3 +1,5 @@
 venv_llm/
 __pycache__/
-
+data/
+.env
+chroma/
