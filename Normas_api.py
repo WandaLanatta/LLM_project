@@ -1,113 +1,101 @@
-import argparse
-import os
-import sys
-import shutil
-from langchain.document_loaders.pdf import PyPDFDirectoryLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.document_loaders.directory import DirectoryLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema.document import Document
-from get_embedding_function import get_embedding_function
-from langchain.vectorstores.chroma import Chroma
+from langchain_community.embeddings.openai import OpenAIEmbeddings
+from langchain_community.vectorstores.chroma import Chroma
+import os
+import shutil
+import pdfplumber
+from dotenv import load_dotenv
 
-
+load_dotenv() 
+os.environ["OPENAI_API_KEY"] 
+CHROMA_PATH = "chroma"
+DATA_PATH = "data"
 
 def main():
-    # Crea un analizador de argumentos
-    parser = argparse.ArgumentParser()
-    # Añade el argumento --reset al analizador
-    parser.add_argument("--reset", action="store_true", help="Reset the database.")
-    # Analiza los argumentos de la línea de comandos
-    args = parser.parse_args()
-    # Si se proporcionó la bandera --reset, borra la base de datos
-    if args.reset:
-        confirm = input("¿Estás seguro de que quieres borrar la base de datos? (s/n): ")
-        if confirm.lower() == 's':
-            print("✨ Eliminando Database")
-            clear_database()
-        else:
-            print("Operación cancelada, la base de datos no se borrará.")
-            sys.exit(0)
+    generate_data_store()
 
-    # Carga los documentos
+def generate_data_store():
+    print("Loading documents...")
     documents = load_documents()
-    # Divide los documentos en fragmentos
-    chunks = split_documents(documents)
-    # Añade los fragmentos a Chroma
-    add_to_chroma(chunks)
+    print(f"Loaded {len(documents)} documents.")
+    
+    print("Splitting documents into chunks...")
+    chunks = split_text(documents)
+    print(f"Split {len(documents)} documents into {len(chunks)} chunks.")
+    
+    print("Saving chunks to Chroma...")
+    save_to_chroma(chunks)
+    print("Chunks saved to Chroma.")
 
 def load_documents():
-    document_loader=PyPDFDirectoryLoader(DATA_PATH)
-    return document_loader.load()
+    documents = []
+    for filename in os.listdir(DATA_PATH):
+        if filename.endswith(".pdf"):
+            with pdfplumber.open(os.path.join(DATA_PATH, filename)) as pdf:
+                for i, page in enumerate(pdf.pages):
+                    text = page.extract_text()
+                    # Aquí asumimos que el nombre del archivo es la fuente.
+                    # El número de página se incrementa para cada página del documento.
+                    documents.append(Document(text, metadata={"Fuente": filename, "pagina": i+1}))
+    return documents
 
-# divide  los documentos en fragmentos o “chunks” más pequeños y los almacena en la variable chunks^^
 
-def split_documents(documents: list[Document]):
-    text_splitter=RecursiveCharacterTextSplitter(
-        chunk_size=800,
-        chunk_overlap=80,
+def split_text(documents: list[Document]):
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=300,
+        chunk_overlap=100,
         length_function=len,
-        is_separator_regex=False,
-
+        add_start_index=True,
     )
-    return text_splitter.split_documents(documents)
-
-##################################################
-################--- ---------#####################
-
-def add_to_chroma(chunks: list[Document]):
-    # Crea una instancia de Chroma que representa la base de datos
-    db = Chroma(
-        persist_directory=CHROMA_PATH, embedding_function=get_embedding_function()
-    )
-
-    # Calcula los ID de los documentos
-    chunks_with_ids = calculate_chunk_ids(chunks)
-
-    # Obtiene los documentos existentes
-    existing_items = db.get(include=[])  # Los ID siempre se incluyen por defecto
-    existing_ids = set(existing_items["ids"])
-    print(f"Numero de Documentos existentes en la Base de Datos: {len(existing_ids)}")
-
+    chunks = text_splitter.split_documents(documents)
     
+    # Print debug information for one document
+    document = chunks[10]
+    print("Sample document content:", document.page_content)
+    print("Sample document metadata:", document.metadata)
 
+    return chunks
 
+def calculate_chunk_ids(chunks: list[Document]):
+    print("Calculando IDs de los fragmentos...")
+    last_page_id = None  
+    current_chunk_index = 0  
 
+    for chunk in chunks:  
+        source = chunk.metadata.get("Fuente")  
+        page = chunk.metadata.get("pagina")  
 
-def calculate_chunk_ids(chunks):
-    # Esta función calcula y asigna un ID único a cada "chunk" (fragmento de documento) en la lista de chunks.
+        current_page_id = f"{source}:{page}"  
 
-    # Esto creará IDs como "data/Norma_Api.pdf:1:2"    Fuente, NumeroDePagina, ChunkNumber
-    # Fuente de la Página : Número de Página : Índice del Chunk
-
-    last_page_id = None  # Almacena el ID de la última página procesada
-    current_chunk_index = 0  # Almacena el índice del chunk actual en la página actual
-
-    for chunk in chunks:  # Itera sobre cada chunk en la lista de chunks
-        source = chunk.metadata.get("Fuente")  # Obtiene la fuente del chunk (por ejemplo, el nombre del archivo)
-        page = chunk.metadata.get("pagina")  # Obtiene el número de página del chunk
-
-        current_page_id = f"{source}:{page}"  # Crea el ID de la página actual
-
-        # Si el ID de la página actual es el mismo que el del último, incrementa el índice.
         if current_page_id == last_page_id:
             current_chunk_index += 1
         else:
-            # Si el ID de la página actual es diferente al del último, reinicia el índice del chunk.
             current_chunk_index = 0
 
-        # Calcula el ID del chunk.
         chunk_id = f"{current_page_id}:{current_chunk_index}"
-        last_page_id = current_page_id  # Actualiza el último ID de página
+        last_page_id = current_page_id  
 
-        # Añade el ID del chunk a los metadatos del chunk.
         chunk.metadata["id"] = chunk_id
 
-    return chunks  # Devuelve la lista de chunks con sus IDs asignados
+    print("IDs de los fragmentos calculados.")
+    return chunks  
 
-
-
-def clear_database():
+def save_to_chroma(chunks: list[Document]):
+    # Clear out the database first.
     if os.path.exists(CHROMA_PATH):
         shutil.rmtree(CHROMA_PATH)
+
+    # Calculate Page IDs.
+    chunks_with_ids = calculate_chunk_ids(chunks)
+
+    # Create a new DB from the documents.
+    db = Chroma.from_documents(
+        chunks_with_ids, OpenAIEmbeddings(), persist_directory=CHROMA_PATH
+    )
+    db.persist()
+    print(f"Saved {len(chunks_with_ids)} chunks to {CHROMA_PATH}.")
 
 if __name__ == "__main__":
     main()
