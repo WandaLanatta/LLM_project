@@ -1,4 +1,9 @@
+
+## python 3.12.3
 pypdf
 langchain
 chromadb # Vector storage
 pytest
+spacy
+tiktoken
+pdfplumber
