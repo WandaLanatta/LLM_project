@@ -24,7 +24,7 @@ Context:
 Por favor, proporciona una respuesta detallada y amplia en funcion de informacion  , ademas de correlacionar con la web , tambien explayate en la tematica.
  Si hay diferentes conclusiones que puedas analizar en "Informacion" hacer analisis para cada criterio, explayarse en cada una de ellas para no sesgar la información, 
  referencia al parrafo  de la "Informacion" dada anteriormente  [Número]. 
-
+"Si no encuentra informacion relevante del contexto brindado, responder no hay informacion adecuada"
 Finalmente, traduce la respuesta al español con inteligencia artificial para evitar errores de traducción, y solo dar la respuesta en español.
 
 Question:
@@ -38,9 +38,10 @@ def main():
     parser.add_argument("query_text", type=str, help="El texto de la consulta.")
     args = parser.parse_args()
     query_text = args.query_text
-
+    aux=query_translate(query_text)
+    print(aux)
     # Primero, hacemos una consulta a RAG.
-    rag_response = query_rag(query_text)
+    rag_response = query_rag(aux)
 
     # Luego, hacemos una consulta a Mistral con la respuesta de RAG.
     mistral_response = query_mistral(rag_response)
@@ -123,6 +124,30 @@ def query_mistral(query_text: str):
     response_text2 = model.invoke(prompt2)
     print(response_text2)
     return response_text2
+
+def query_translate(query_text: str):
+    # instancia del modelo Mistral.
+   
+    # model = ChatOpenAI()
+    #'query_text' es una cadena de forma estricta
+    query_text = str(query_text)
+
+    prompt_template = "Context: {context}\nQuestion: {question}"
+    context = "Correct spelling errors and improve the query, only give the question as an answer"
+    question = "Translate to english: " + query_text
+
+    prompt_1 = prompt_template.format(context=context, question=question)
+
+    model = ChatOpenAI()
+    # model = Ollama(model="mistral")
+
+    
+    response = model.invoke(prompt_1)
+    response_content = response.content
+    
+    r=response_content
+    return r
+
 
 if __name__ == "__main__":
     main()
